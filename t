@@ -5,7 +5,8 @@ cms run job add \"echo b\"
 cms run job add \"echo c\"
 cms run job add \"echo d\"
 cms run job add \"echo e\"
-cms run todo
-cms run view --db=todo
-cms run view --db=done
+cms run status
+#cms run todo
+#cms run view --db=todo
+#cms run view --db=done
 

@@ -17,10 +17,9 @@ if files.count == 0:
 
 def _execute(i):
 	try:
-		todo = Store(name="dbtodo", host="localhost", port=6379)
-		done = Store(name="dbdone", host="localhost", port=6380)
-		todo.connect()
-		done.connect()
+		store = Store(host="localhost", port=6379)
+		r = store.connect()
+		todo = r[Store.TODO]
 		command = todo.get(i)
 		print(i, command)
 		os.system(command)
@@ -47,6 +46,23 @@ class Scheduler:
 
 class Store:
 
+	TODO = 0
+	DONE = 1
+	FILES = 2
+	DIRS = 3
+
+	NAME = ["todo",
+			"done",
+			"files",
+			"dirs"
+			]
+
+	def get_index(self, name):
+		if type(name) == int:
+			return name
+		else:
+			return self.NAME.index(name)
+
 	def _run(self, command):
 		#command_list = shlex.split(command)
 		#return subprocess.check_output(command_list)
@@ -61,38 +77,53 @@ class Store:
 		self.host = host
 		self.port = port
 		self.container_id= None
-		self.r = None
+		self.r = {}
 		if directory == None:
 			self.directory = os.getcwd()
 		else:
 			self.directory = directory
 
+	def connect(self):
+		self.r = {}
+		for id in [0,1,2,3]:
+			self.r[id] = redis.Redis(host="localhost", port=6379, db=id)
+
+		return self.r
+
+	def count(self, db=0):
+		try:
+			return self.r[db].dbsize()
+		except:
+			return 0
+
 	def shell(self):
 		os.system ("docker exec -it {self.name} bash")
 
-	def status(self):
+	def status(self, db=0):
 		try:
-			size = self.r.dbsize()
+			size = self.r[db].dbsize()
 			running = True
 		except:
 			size = None
 			running = False
 
 		self.container_id = Shell.run(f'docker ps -aqf "name={self.name}"').strip() or None
-		print(f"Name:      {self.name}")
-		print(f"Host:      {self.host}")
-		print(f"Port:      {self.port}")
-		print(f"Directory: {self.directory}")
-		print(f"Count:     {size}")
-		print(f"Running:   {running}")
-		print(f"ID:        {self.container_id}")
+		print(f"Name      : {self.name}")
+		print(f"DB        : {db} {self.NAME[db]}")
+		print(f"Host      : {self.host}")
+		print(f"Port      : {self.port}")
+		print(f"Directory : {self.directory}")
+		print(f"Count     : {size}")
+		print(f"Running   : {running}")
+		print(f"ID        : {self.container_id}")
+		for i in range(0,4):
+			size = self.count(i)
+			print(f"Size {self.NAME[i]:<5}: {size}")
 
 	def start(self):
-
-		os.system(f"mkdir -p {self.directory}/redis-conf/{self.name}")
 		command = f"docker run -d -p 127.0.0.1:{self.port}:6379" \
 				  f" --name {self.name}" \
-				  f" -v {self.directory}/redis-conf/{self.name}/redis-conf:/redis-conf redis redis-server /redis-conf"
+				  f" -v {self.directory}/redis-conf:/redis-conf redis redis-server /redis-conf"
 		print(command)
 		r = Shell.run(command)
 		print(r)
@@ -109,49 +140,38 @@ class Store:
 			print (f"{self.name} is not running")
 		print(f"Stopping {self.name} done")
 
-
-	def connect(self):
-		# pool = redis.ConnectionPool(self.host, self.port, db=0)
-		# self.r = redis.Redis(connection_pool=pool)
-		self.r = redis.Redis(
-			host=self.host,
-			port=self.port)
-		self.counter = self.count
-
 	def reset(self):
 		pass
 
-	@property
-	def count(self):
+	def set(self, key, value, db=0):
+		db = self.get_index(db)
+		self.r[db].set(key, value)
+
+	def get(self, key, db=0):
+		db = self.get_index(db)
 		try:
-			return self.r.dbsize()
-		except:
-			return 0
-
-	def __len__(self):
-		return self.count
-
-	def set(self, key, value):
-		self.r.set(key, value)
-
-	def get(self, key):
-		try:
-			return str(self.r.get(key), "utf-8")
+			return str(self.r[db].get(key), "utf-8")
 		except:
 			return None
 
-	def delete(self, key):
+	def delete(self, key, db=0):
+		db = self.get_index(db)
 		try:
-			self.r.delete(key)
+			self.r[db].delete(key)
 		except Exception as e:
 			print (e)
 
 	def add_job(self, command):
-		n = self.count
+		return self.add(command, db=0)
+
+	def add(self, command, db=0):
+		db = self.get_index(db)
+		n = self.count(db=db)
 		n = n + 1
-		self.set(n, command)
+		self.set(n, command, db=db)
 		return n
 
+	"""
 	def add_directory(self, directory, progress=True):
 		# create a list of file and sub directories
 		# names in the given directory
@@ -177,6 +197,7 @@ class Store:
 		# os.system(f"time run -P -zr -f\"+ */\" -f\"- *\" -e 'ssh -c aes128-ctr' {source}/ {destination}/")
 		os.system(f"time run -P -zr -f\"+ */\" -f\"- *\" -e ssh  {source}/ {destination}/")
 
+	
 	def range(self, from_key, to_key):
 		# only works if the key is int
 		data = []
@@ -209,6 +230,6 @@ class Store:
 			command = ["run", "-Pa", file, where]
 			print_command(command)
 			check_call(command)
-
+	"""
 
 

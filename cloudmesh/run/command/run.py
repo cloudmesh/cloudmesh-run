@@ -5,7 +5,7 @@ from cloudmesh.common.util import path_expand
 from pprint import pprint
 from cloudmesh.common.debug import VERBOSE
 from cloudmesh.shell.command import map_parameters
-from cloudmesh.run.store import Store, Scheduler
+from cloudmesh.common.util import readfile
 import os
 
 class RunCommand(PluginCommand):
@@ -23,7 +23,7 @@ class RunCommand(PluginCommand):
                 run job set ID COMMAND
                 run job rm ID
                 run job delete ID
-                run job add COMMAND
+                run job add COMMAND [--db=DB]
                 run job add --file=FILE
                 run cp add DIRECTORY DESTINATION
                 run cp dirs find
@@ -83,22 +83,15 @@ class RunCommand(PluginCommand):
         map_parameters(arguments, "file")
 
         # VERBOSE(arguments)
+        from cloudmesh.run.store import Store, Scheduler
 
-        def prepare_stores():
-            db = {}
-            db["todo"] = Store(name="dbtodo", host="localhost", port=6379)
-            db["done"] = Store(name="dbdone", host="localhost", port=6380)
-            db["files"] = Store(name="dbfiles", host="localhost", port=6381)
-            db["dirs"] = Store(name="dbdirs", host="localhost", port=6382)
+        store = Store(name="dbtodo", host="localhost", port=6379)
+        r = store.connect()
 
-            for database in db:
-                db[database].connect()
-
-            return db
-
+        """
         def dir_list(filename):
             # TODO: we also need a path replace
-            db = prepare_stores()
+            db = connect()
             size = len(db["dirs"])
 
             counter = 0
@@ -111,7 +104,7 @@ class RunCommand(PluginCommand):
 
 
         def find_dirs():
-            db = prepare_stores()
+            db = connect()
             last_dir = ""
             counter = 0
             for i in range(1, len(todoDB) + 1):
@@ -128,7 +121,7 @@ class RunCommand(PluginCommand):
 
         def reduce_dirs():
             import PurePath
-            db = prepare_stores()
+            db = connect()
 
             found_counter = 0
             counter = 0
@@ -149,24 +142,25 @@ class RunCommand(PluginCommand):
                     if found:
                         found_counter = found_counter + 1
                         db["dirs"].r.delete(part)
+        """
 
         def start():
-            db = prepare_stores()
-            for database in db:
-                db[database].start()
+            store.start()
             status()
 
         def stop():
-            db = prepare_stores()
-            for database in db:
-                db[database].stop()
+            #for database in db:
+            #    db[database].stop()
+            store.stop()
             status()
 
         def status():
-            db = prepare_stores()
-            for database in db:
-               print (79 * "=")
-               db[database].status()
+            #for database in db:
+            #   print (79 * "=")
+            #   db[database].status()
+            print (79 * "=")
+            store.status()
+
             print(79 * "=")
             os.system('docker ps --format "table {{.Names}}\t{{.ID}}\t{{.Status}}\t{{.Ports}}"')
             print(79 * "=")
@@ -184,31 +178,40 @@ class RunCommand(PluginCommand):
             find_dirs()
 
         elif arguments.job and arguments.add and arguments.COMMAND:
-            db = prepare_stores()
-            db["todo"].add_job(arguments.COMMAND)
+            db = arguments["--db"] or "todo"
+            id = store.get_index(name=db)
+
+            store.add(arguments.COMMAND, db=db)
+
+        elif arguments.job and arguments.add and arguments["--file"]:
+            filename = arguments["--file"]
+            data = readfile(filename).strip().splitlines()
+            for line in data:
+               store.add(line, db=Store.TODO)
 
         elif arguments.reduce and arguments.dirs and arguments.cp:
             reduce_dirs()
 
         elif arguments.view:
 
-            db = prepare_stores()
             database = arguments["--db"] or "todo"
-            data = db[database]
-            print (len(data))
+            id = Store.NAME.index(database)
+            data = r[id]
+            count = store.count(db=id)
+
             from_id = int(arguments["--from"] or "1")
-            to_id = int(arguments["--to"] or len(data))
-            if len(data) == 0:
+            to_id = int(arguments["--to"] or count)
+            if count == 0:
                 print(f"Database '{database}' is empty")
-            elif to_id > len(data):
-                to_id = len(data)
+            elif to_id > count:
+                to_id = count
             elif to_id < from_id:
                 print("FROM must be smaller then TO")
             else:
-                print (f"Range: {from_id}, {to_id}")
+                #print (f"Range: {from_id}, {to_id}")
                 print ("ID\tCOMMAND")
                 for i in range(from_id, to_id + 1):
-                    value = data.get(i)
+                    value = str(data.get(i), "utf-8")
                     print(f"{i}\t{value}")
 
         elif arguments.example and arguments.cp:
@@ -219,18 +222,15 @@ class RunCommand(PluginCommand):
 
         elif arguments.todo and arguments.ID:
             id = int(arguments.ID)
-            db = prepare_stores()
-            scheduler = Scheduler(todo=db["todo"], done=db["done"])
+            scheduler = Scheduler(todo=r[Store.TODO], done=r[Store.DONE])
             scheduler.run(id, id, 1)
 
         elif arguments.todo:
-            db = prepare_stores()
-            scheduler = Scheduler(todo=db["todo"], done=db["done"])
+            scheduler = Scheduler(todo=r[Store.TODO], done=r[Store.DONE])
             scheduler.run(1,3,1)
 
         elif arguments.job and (arguments.rm or arguments.delete):
-            db = prepare_stores()
-            todo = db["todo"]
+            todo = r["todo"]
             try:
                 todo.delete(arguments.ID)
             except:
@@ -239,8 +239,7 @@ class RunCommand(PluginCommand):
         elif arguments.job and arguments.set:
             id = arguments.ID
             command = arguments.COMMAND
-            db = prepare_stores()
-            todo = db["todo"]
+            todo = r["todo"]
             todo.set(id, command)
 
         return ""
