@@ -8,6 +8,7 @@ from cloudmesh.shell.command import map_parameters
 from cloudmesh.common.util import readfile
 import os
 
+
 class RunCommand(PluginCommand):
 
     # noinspection PyUnusedLocal
@@ -20,6 +21,7 @@ class RunCommand(PluginCommand):
                 run start
                 run stop
                 run status
+                run job get ID
                 run job set ID COMMAND
                 run job rm ID
                 run job delete ID
@@ -77,7 +79,6 @@ class RunCommand(PluginCommand):
 
         """
 
-
         # arguments.FILE = arguments['--file'] or None
 
         map_parameters(arguments, "file")
@@ -85,7 +86,7 @@ class RunCommand(PluginCommand):
         # VERBOSE(arguments)
         from cloudmesh.run.store import Store, Scheduler
 
-        store = Store(name="dbtodo", host="localhost", port=6379)
+        store = Store()
         r = store.connect()
 
         """
@@ -149,16 +150,16 @@ class RunCommand(PluginCommand):
             status()
 
         def stop():
-            #for database in db:
+            # for database in db:
             #    db[database].stop()
             store.stop()
             status()
 
         def status():
-            #for database in db:
+            # for database in db:
             #   print (79 * "=")
             #   db[database].status()
-            print (79 * "=")
+            print(79 * "=")
             store.status()
 
             print(79 * "=")
@@ -177,29 +178,39 @@ class RunCommand(PluginCommand):
         elif arguments.find and arguments.dirs and arguments.cp:
             find_dirs()
 
-        elif arguments.job and arguments.add and arguments.COMMAND:
+        elif arguments.job and arguments.get and arguments.ID:
             db = arguments["--db"] or "todo"
-            id = store.get_index(name=db)
+            _id = store.get_index(name=db)
+            value = store.get(arguments.ID, db=_id)
+            print(value)
 
-            store.add(arguments.COMMAND, db=db)
+        elif arguments.job and arguments.add and arguments.COMMAND:
+
+            db_name = arguments["--db"] or "todo"
+            db = store.get_index(db_name)
+            store.append(arguments.COMMAND, db=db)
+            # store.flush(db=db)
 
         elif arguments.job and arguments.add and arguments["--file"]:
             filename = arguments["--file"]
             data = readfile(filename).strip().splitlines()
             for line in data:
-               store.add(line, db=Store.TODO)
+                store.add(line, db=Store.TODO)
 
         elif arguments.reduce and arguments.dirs and arguments.cp:
             reduce_dirs()
 
         elif arguments.view:
 
+            print("kkk")
+            store.print(db=0)
+            """
             database = arguments["--db"] or "todo"
             id = Store.NAME.index(database)
-            data = r[id]
+            print ("PPP", id)
             count = store.count(db=id)
 
-            from_id = int(arguments["--from"] or "1")
+            from_id = int(arguments["--from"] or 1)
             to_id = int(arguments["--to"] or count)
             if count == 0:
                 print(f"Database '{database}' is empty")
@@ -211,8 +222,11 @@ class RunCommand(PluginCommand):
                 #print (f"Range: {from_id}, {to_id}")
                 print ("ID\tCOMMAND")
                 for i in range(from_id, to_id + 1):
-                    value = str(data.get(i), "utf-8")
+                    value = store.get(str(i), db=id)
+                    if value is None:
+                        value = "None"
                     print(f"{i}\t{value}")
+            """
 
         elif arguments.example and arguments.cp:
             name = arguments["DIRECTORY"] or "example"
@@ -221,25 +235,23 @@ class RunCommand(PluginCommand):
             e.create()
 
         elif arguments.todo and arguments.ID:
-            id = int(arguments.ID)
-            scheduler = Scheduler(todo=r[Store.TODO], done=r[Store.DONE])
-            scheduler.run(id, id, 1)
+            _id = int(arguments.ID)
+            scheduler = Scheduler(store)
+            scheduler.run(_id, _id, parallelism=1)
 
         elif arguments.todo:
-            scheduler = Scheduler(todo=r[Store.TODO], done=r[Store.DONE])
-            scheduler.run(1,3,1)
+            scheduler = Scheduler(store)
+            scheduler.run(parallelism=1)
 
         elif arguments.job and (arguments.rm or arguments.delete):
-            todo = r["todo"]
             try:
-                todo.delete(arguments.ID)
+                store.delete(arguments.ID, db=0)
             except:
-                print (f"Job {arguments.ID} can not be deleted")
+                print(f"Job {arguments.ID} can not be deleted")
 
         elif arguments.job and arguments.set:
-            id = arguments.ID
+            _id = arguments.ID
             command = arguments.COMMAND
-            todo = r["todo"]
-            todo.set(id, command)
+            store.set(_id, command, db=0)
 
         return ""

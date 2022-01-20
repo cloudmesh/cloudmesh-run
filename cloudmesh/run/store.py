@@ -16,162 +16,181 @@ if files.count == 0:
 
 
 def _execute(i):
-	try:
-		store = Store(host="localhost", port=6379)
-		r = store.connect()
-		todo = r[Store.TODO]
-		command = todo.get(i)
-		print(i, command)
-		os.system(command)
-		# done.set(i, command)
-		todo.delete(i)
-		print(i, "updated")
-	except Exception as e:
-		print (e)
+    try:
+        i = str(i)
+        store = Store(host="localhost", port=6379)
+        r = store.connect()
+        command = store.get(i, db=Store.TODO)
+        print(i, command)
+        os.system(command)
+        store.set(i, command, db=Store.DONE)
+        store.set(i, command, db=Store.TODO)
+        store.delete(i, db=Store.TODO)
+        print(i, "updated")
+    except Exception as e:
+        print(e)
+
 
 class Scheduler:
 
-	def __init__(self, todo=None, done=None):
-		self.todo = todo
-		self.done = done
+    def __init__(self, store):
+        self.store = store
 
-	def run(self, from_id, to_id, parallism=1):
+    def run(self, from_id=1, to_id=None, parallelism=1):
+        to_id = to_id or self.store.count(db=0)
+        commands = []
+        print("GGG", from_id, to_id)
+        for i in range(from_id, to_id + 1):
+            commands.append(i)
+        print(commands)
+        with Pool(parallelism) as p:
+            p.map(_execute, commands)
 
-		commands = []
-		for i in range(from_id, to_id+1):
-			commands.append(i)
-		print (commands)
-		with Pool(parallism) as p:
-			p.map(_execute, commands)
+
 
 class Store:
+    TODO = 0
+    DONE = 1
+    FILES = 2
+    DIRS = 3
 
-	TODO = 0
-	DONE = 1
-	FILES = 2
-	DIRS = 3
+    NAME = ["todo", "done", "files", "dirs"]
 
-	NAME = ["todo",
-			"done",
-			"files",
-			"dirs"
-			]
+    def get_index(self, name):
+        if type(name) == int:
+            return name
+        else:
+            return self.NAME.index(name)
 
-	def get_index(self, name):
-		if type(name) == int:
-			return name
-		else:
-			return self.NAME.index(name)
+    def _run(self, command):
+        # command_list = shlex.split(command)
+        # return subprocess.check_output(command_list)
+        return Shell.run(command)
 
-	def _run(self, command):
-		#command_list = shlex.split(command)
-		#return subprocess.check_output(command_list)
-		return Shell.run(command)
+    def print(self, db=0):
+        print("ID\tVALUE")
+        for key in self.r[db].scan_iter():
+            value = self.r[db].get(key)
+            print(f"{key}\t{value}")
 
-	def __init__(self,
-				 name="todo",
-				 host="localhost",
-				 port=6379,
-				 directory=None):
-		self.name = name
-		self.host = host
-		self.port = port
-		self.container_id= None
-		self.r = {}
-		if directory == None:
-			self.directory = os.getcwd()
-		else:
-			self.directory = directory
+    def __init__(self,
+                 name="todo",
+                 host="localhost",
+                 port=6379,
+                 directory=None):
+        self.name = name
+        self.host = host
+        self.port = port
+        self.container_id = None
+        self.r = [None, None, None, None]
+        if directory is None:
+            self.directory = os.getcwd()
+        else:
+            self.directory = directory
 
-	def connect(self):
-		self.r = {}
-		for id in [0,1,2,3]:
-			self.r[id] = redis.Redis(host="localhost", port=6379, db=id)
-
-		return self.r
-
-	def count(self, db=0):
-		try:
-			return self.r[db].dbsize()
-		except:
-			return 0
-
-	def shell(self):
-		os.system ("docker exec -it {self.name} bash")
-
-	def status(self, db=0):
-		try:
-			size = self.r[db].dbsize()
-			running = True
-		except:
-			size = None
-			running = False
-
-		self.container_id = Shell.run(f'docker ps -aqf "name={self.name}"').strip() or None
-		print(f"Name      : {self.name}")
-		print(f"DB        : {db} {self.NAME[db]}")
-		print(f"Host      : {self.host}")
-		print(f"Port      : {self.port}")
-		print(f"Directory : {self.directory}")
-		print(f"Count     : {size}")
-		print(f"Running   : {running}")
-		print(f"ID        : {self.container_id}")
-		for i in range(0,4):
-			size = self.count(i)
-			print(f"Size {self.NAME[i]:<5}: {size}")
-
-	def start(self):
-		command = f"docker run -d -p 127.0.0.1:{self.port}:6379" \
-				  f" --name {self.name}" \
-				  f" -v {self.directory}/redis-conf:/redis-conf redis redis-server /redis-conf"
-		print(command)
-		r = Shell.run(command)
-		print(r)
+    def connect(self):
+        self.r = [None, None, None, None]
+        for _id in [0, 1, 2, 3]:
+            self.r[_id] = redis.Redis(host="localhost", port=6379, db=_id, decode_responses=True)
+        # self.r[0].set("x", "y")
 
 
-	def stop(self):
-		print(f"Stopping {self.name} ...")
-		try:
-			r1 = Shell.run(f"docker stop {self.name}")
-			r2 = Shell.run(f"docker rm {self.name}")
-			if "No such container:" in r1 or "No such container:" in r2:
-				raise ValueError
-		except:
-			print (f"{self.name} is not running")
-		print(f"Stopping {self.name} done")
 
-	def reset(self):
-		pass
+    def shell(self):
+        os.system("docker exec -it {self.name} bash")
 
-	def set(self, key, value, db=0):
-		db = self.get_index(db)
-		self.r[db].set(key, value)
+    def status(self, db=0):
+        try:
+            size = self.r[db].dbsize()
+            running = True
+        except:
+            size = None
+            running = False
 
-	def get(self, key, db=0):
-		db = self.get_index(db)
-		try:
-			return str(self.r[db].get(key), "utf-8")
-		except:
-			return None
+        self.container_id = Shell.run(f'docker ps -aqf "name={self.name}"').strip() or None
+        print(f"Name      : {self.name}")
+        print(f"DB        : {db} {self.NAME[db]}")
+        print(f"Host      : {self.host}")
+        print(f"Port      : {self.port}")
+        print(f"Directory : {self.directory}")
+        print(f"Count     : {size}")
+        print(f"Running   : {running}")
+        print(f"ID        : {self.container_id}")
+        for i in range(0, 4):
+            size = self.elements(db=i)
+            print(f"Size {self.NAME[i]:<5}: {size}")
+        for i in range(0, 4):
+            try:
+                p = self.r[i].ping()
+            except:
+                p = False
+            print(f"Ping {self.NAME[i]:<5}: {p}")
+        #for i in range(0, 4):
+        #    try:
+        #        p = self.r[i].memory_stats()
+        #    except:
+        #        p = False
+        #    print(f"Memory {self.NAME[i]:<5}: {p}")
 
-	def delete(self, key, db=0):
-		db = self.get_index(db)
-		try:
-			self.r[db].delete(key)
-		except Exception as e:
-			print (e)
+    def start(self):
+        command = f"docker run -d -p 127.0.0.1:{self.port}:6379" \
+                  f" --name {self.name}" \
+                  f" -v {self.directory}/redis-conf:/redis-conf redis redis-server /redis-conf"
+        print(command)
+        ret = Shell.run(command)
+        print(ret)
 
-	def add_job(self, command):
-		return self.add(command, db=0)
+    def stop(self):
+        print(f"Stopping {self.name} ...")
+        try:
+            r1 = Shell.run(f"docker stop {self.name}")
+            r2 = Shell.run(f"docker rm {self.name}")
+            if "No such container:" in r1 or "No such container:" in r2:
+                raise ValueError
+        except:
+            print(f"{self.name} is not running")
+        print(f"Stopping {self.name} done")
 
-	def add(self, command, db=0):
-		db = self.get_index(db)
-		n = self.count(db=db)
-		n = n + 1
-		self.set(n, command, db=db)
-		return n
+    def set(self, key, value, db=0):
+        print ("DD", key,  type(key), value, db, self.r[db], self.elements(db=db))
+        self.r[db].set(str(key), value)
+        print(self.elements(db=db))
 
-	"""
+    def get(self, key, db=0):
+        try:
+            return self.r[db].get(key)
+        except:
+            return None
+
+    def delete(self, key, db=0):
+        try:
+            self.r[db].delete(key)
+        except Exception as e:
+            print(e)
+
+    def flush(self, db=None):
+        if db is None:
+            ids = [0, 1, 2, 3]
+        else:
+            ids = [db]
+        for i in ids:
+            try:
+                self.r[i].flushdb()
+            except:
+                pass
+
+    def elements(self, db=0):
+        try:
+            return self.r[db].dbsize()
+        except Exception as e:
+            print (e)
+            return 0
+
+    def append(self, command, db=0):
+        n = self.elements(db=db)
+        n = n + 1
+        self.set(n, command, db=db)
+    """
 	def add_directory(self, directory, progress=True):
 		# create a list of file and sub directories
 		# names in the given directory
@@ -231,5 +250,3 @@ class Store:
 			print_command(command)
 			check_call(command)
 	"""
-
-
