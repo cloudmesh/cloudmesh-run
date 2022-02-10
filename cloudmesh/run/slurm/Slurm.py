@@ -1,4 +1,28 @@
 from cloudmesh.common.util import path_expand
+"""
+
+Example:
+
+from cloudmesh.run.slurm.Slurm import Slurm
+
+run_job = "ls"
+
+batch_job = '''
+    put example batch job here
+'''
+
+queue = Slurm(host="example.org",
+              user="gregor",
+              queue="default")
+              
+info = queue.info()
+print (info)
+
+queue.run(run_job)
+
+queue.
+
+"""
 
 class Slurm:
 
@@ -78,6 +102,13 @@ class Slurm:
         """
         pass
 
-    # we need to make sure we can specify the queu name for submission
+    def kill(self, name):
+        """
+        Kills the job with the given name
 
-    # we want local database with job ids
+        :param name: the name of the job, if the name is "all", all jobs will be killed
+        :type name: str
+        :return: list of all jobs that were successfull killed
+        :rtype: list
+        """
+        pass
