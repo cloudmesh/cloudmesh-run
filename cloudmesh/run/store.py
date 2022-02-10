@@ -1,9 +1,12 @@
 import redis
 import os
+import sys
+import curses
 from subprocess import check_call
 import subprocess
 from cloudmesh.common.Shell import Shell
 from multiprocessing import Pool
+from pprint import pprint
 
 """
 files = Store(host="localhost", port=6379)
@@ -39,13 +42,10 @@ class Scheduler:
     def run(self, from_id=1, to_id=None, parallelism=1):
         to_id = to_id or self.store.count(db=0)
         commands = []
-        print("GGG", from_id, to_id)
         for i in range(from_id, to_id + 1):
             commands.append(i)
-        print(commands)
         with Pool(parallelism) as p:
             p.map(_execute, commands)
-
 
 
 class Store:
@@ -74,7 +74,7 @@ class Store:
             print(f"{key}\t{value}")
 
     def __init__(self,
-                 name="todo",
+                 name="dbtodo",
                  host="localhost",
                  port=6379,
                  directory=None):
@@ -94,8 +94,6 @@ class Store:
             self.r[_id] = redis.Redis(host="localhost", port=6379, db=_id, decode_responses=True)
         # self.r[0].set("x", "y")
 
-
-
     def shell(self):
         os.system("docker exec -it {self.name} bash")
 
@@ -108,6 +106,8 @@ class Store:
             running = False
 
         self.container_id = Shell.run(f'docker ps -aqf "name={self.name}"').strip() or None
+        print("Cloudmesh Transfer")
+        print(79 * "=")
         print(f"Name      : {self.name}")
         print(f"DB        : {db} {self.NAME[db]}")
         print(f"Host      : {self.host}")
@@ -116,21 +116,23 @@ class Store:
         print(f"Count     : {size}")
         print(f"Running   : {running}")
         print(f"ID        : {self.container_id}")
+
+        print("DB\tNAME\tKEYS\tPING\tBYTES\tALLOCATED")
         for i in range(0, 4):
-            size = self.elements(db=i)
-            print(f"Size {self.NAME[i]:<5}: {size}")
-        for i in range(0, 4):
+            size = self.count(db=i)
             try:
                 p = self.r[i].ping()
             except:
                 p = False
-            print(f"Ping {self.NAME[i]:<5}: {p}")
-        #for i in range(0, 4):
-        #    try:
-        #        p = self.r[i].memory_stats()
-        #    except:
-        #        p = False
-        #    print(f"Memory {self.NAME[i]:<5}: {p}")
+            m = self.r[i].memory_stats()
+            # pprint(p)
+            c = m["keys.count"]
+            b = m["dataset.bytes"]
+            a = m["total.allocated"]
+
+            print(f"{i}\t{Store.NAME[i]}\t{size}\t{p}\t{b}\t{a}")
+        print(f"\t\t====\t\t\t")
+        print(f"\t\t{c}\t\t\t")
 
     def start(self):
         command = f"docker run -d -p 127.0.0.1:{self.port}:6379" \
@@ -152,9 +154,7 @@ class Store:
         print(f"Stopping {self.name} done")
 
     def set(self, key, value, db=0):
-        print ("DD", key,  type(key), value, db, self.r[db], self.elements(db=db))
         self.r[db].set(str(key), value)
-        print(self.elements(db=db))
 
     def get(self, key, db=0):
         try:
@@ -179,39 +179,41 @@ class Store:
             except:
                 pass
 
-    def elements(self, db=0):
+    def count(self, db=0):
         try:
             return self.r[db].dbsize()
         except Exception as e:
-            print (e)
+            print(e)
             return 0
 
     def append(self, command, db=0):
-        n = self.elements(db=db)
+        n = self.count(db=db)
         n = n + 1
         self.set(n, command, db=db)
+
+    def add_directory(self, directory, progress=True, db=2):
+        # create a list of file and sub directories
+        # names in the given directory
+        listOfFile = os.listdir(directory)
+        allFiles = list()
+        # Iterate over all the entries
+        counter = self.count(db=db)
+        for entry in listOfFile:
+            # Create full path
+            fullPath = os.path.join(directory, entry)
+            # If entry is a directory then get the list of files in this directory
+            if os.path.isdir(fullPath):
+                allFiles = allFiles + self.add_directory(fullPath)
+            else:
+                allFiles.append(fullPath)
+                counter = counter + 1
+                if progress:
+                    print(counter, end="\r")
+                self.set(counter, fullPath, db=db)
+
+        return allFiles
+
     """
-	def add_directory(self, directory, progress=True):
-		# create a list of file and sub directories
-		# names in the given directory
-		listOfFile = os.listdir(directory)
-		allFiles = list()
-		# Iterate over all the entries
-		for entry in listOfFile:
-			# Create full path
-			fullPath = os.path.join(directory, entry)
-			# If entry is a directory then get the list of files in this directory
-			if os.path.isdir(fullPath):
-				allFiles = allFiles + self.add_files(fullPath)
-			else:
-				allFiles.append(fullPath)
-				self.counter = self.counter + 1
-				if progress:
-					print(self.counter, end="\r")
-				self.set(self.counter, fullPath)
-
-		return allFiles
-
 	def create_tree(self, source, destination):
 		# os.system(f"time run -P -zr -f\"+ */\" -f\"- *\" -e 'ssh -c aes128-ctr' {source}/ {destination}/")
 		os.system(f"time run -P -zr -f\"+ */\" -f\"- *\" -e ssh  {source}/ {destination}/")

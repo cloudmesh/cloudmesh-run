@@ -42,8 +42,6 @@ version = readfile("VERSION")[0].strip()
 with open('README.md') as f:
     long_description = f.read()
 
-
-
 NAME = "cloudmesh-run"
 DESCRIPTION = "A command called run cloudmesh shell to run commands in parallel"
 AUTHOR = "Gregor von Laszewski"

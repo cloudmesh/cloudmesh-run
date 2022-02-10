@@ -27,7 +27,7 @@ class RunCommand(PluginCommand):
                 run job delete ID
                 run job add COMMAND [--db=DB]
                 run job add --file=FILE
-                run cp add DIRECTORY DESTINATION
+                run cp add DIRECTORY [DESTINATION]
                 run cp dirs find
                 run cp dirs reduce
                 run cp example [DIRECTORY]
@@ -202,7 +202,6 @@ class RunCommand(PluginCommand):
 
         elif arguments.view:
 
-            print("kkk")
             store.print(db=0)
             """
             database = arguments["--db"] or "todo"
@@ -253,5 +252,11 @@ class RunCommand(PluginCommand):
             _id = arguments.ID
             command = arguments.COMMAND
             store.set(_id, command, db=0)
+
+        elif arguments.cp and arguments.add and arguments.DIRECTORY:
+            destination = arguments.DESTINATION
+            source = arguments.DIRECTORY
+            store.add_directory(source)
+            print()
 
         return ""

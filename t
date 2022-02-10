@@ -7,12 +7,10 @@ cms run job add \"echo d\"
 cms run job add \"echo e\"
 cms run status
 cms run view --db=todo
+cms run job get 2
 
-
-#cms run job get 2
-
-#cms run todo
-#cms run status
-#cms run view --db=todo
-#cms run view --db=done
+cms run todo
+cms run status
+cms run view --db=todo
+cms run view --db=done
 
